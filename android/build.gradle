@@ -1,0 +1,130 @@
+buildscript {
+  repositories {
+    google()
+    mavenCentral()
+  }
+
+  dependencies {
+    classpath 'com.android.tools.build:gradle:7.2.1'
+  }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'com.facebook.react'
+
+def safeExtGet(prop, fallback) {
+    rootProject.ext.has(prop) ? rootProject.ext.get(prop) : fallback
+}
+
+android {
+  compileSdkVersion safeExtGet('compileSdkVersion', 33)
+  namespace "com.wscodelabs.callLogs"
+
+  defaultConfig {
+    minSdkVersion safeExtGet('minSdkVersion', 21)
+    targetSdkVersion safeExtGet('targetSdkVersion', 33)
+    buildConfigField "boolean", "IS_NEW_ARCHITECTURE_ENABLED", "true"
+    versionCode 1
+    versionName "1.0"
+  }
+
+  buildFeatures {
+    buildConfig true
+  }
+
+  buildTypes {
+    release {
+      minifyEnabled false
+    }
+  }
+
+  lintOptions {
+    abortOnError false
+  }
+
+  sourceSets {
+    main {
+      java {
+        srcDirs += [
+          // For Turbo Modules
+          "${project.rootDir}/build/generated/source/codegen/java"
+        ]
+      }
+    }
+  }
+}
+
+repositories {
+    google()
+    maven {
+        // All of React Native (JS, Obj-C sources, Android binaries) is installed from npm
+        url "$rootDir/../node_modules/react-native/android"
+    }
+    mavenCentral()
+}
+
+dependencies {
+  implementation "com.facebook.react:react-android:${safeExtGet('reactNativeVersion', '+')}"
+  implementation "androidx.annotation:annotation:1.5.0"
+  implementation "com.facebook.fbjni:fbjni-java-only:0.2.2"
+}
+
+def configureReactNativePom(def pom) {
+  def packageJson = new groovy.json.JsonSlurper().parseText(file('../package.json').text)
+
+  pom.project {
+    name packageJson.title
+    artifactId packageJson.name
+    version = packageJson.version
+    group = "com.wscodelabs.callLogs"
+    description packageJson.description
+    url packageJson.repository.baseUrl
+
+    licenses {
+      license {
+        name packageJson.license
+        url packageJson.repository.baseUrl + '/blob/master/' + packageJson.licenseFilename
+        distribution 'repo'
+      }
+    }
+
+    developers {
+      developer {
+        id packageJson.author.username
+        name packageJson.author.name
+      }
+    }
+  }
+}
+
+afterEvaluate { project ->
+
+    // Generates a AndroidManifest.xml with the correct react.modules value
+    task generateManifest(type: Copy) {
+        from "${project.projectDir}/src/main/AndroidManifest.xml"
+        into "${project.buildDir}/generated/android/src/main"
+        rename 'AndroidManifest.xml', 'AndroidManifest.xml'
+        filter { line -> line.replaceAll('REPLACE_REACT_MODULES', '\.ReactModules') }
+    }
+
+    android.sourceSets.main.manifest.srcFile "${project.buildDir}/generated/android/src/main/AndroidManifest.xml"
+
+    tasks.preBuild.dependsOn generateManifest
+
+    // Add the Kotlin plugin if needed
+    try {
+        project.react.getCurrentReactNativeVersion().with {
+            // For React Native 0.71 and above
+            if (major > 0 || minor >= 71) {
+                apply plugin: 'org.jetbrains.kotlin.android'
+            }
+        }
+    } catch (Exception ignored) {
+        // Project is not using React Native
+    }
+
+    tasks.withType(org.gradle.external.javadoc.JavadocGenTask) {
+        // We disable the documentation task because it causes issues with the generated code
+        enabled = false
+    }
+}
